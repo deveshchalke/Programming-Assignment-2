@@ -42,6 +42,10 @@ bool IsCorrupted(struct pkt packet) {
 /* -------------------- Sender (A) Code -------------------- */
 
 void A_output(struct msg message) {
+    /* GBN trace: new message arrives */
+    if (TRACE > 1)
+        printf("----A: New message arrives, send window is not full, send new messge to layer3!\n");
+
     if (next_seqnum < send_base + WINDOWSIZE) {
         struct pkt sendpkt;
         int window_pos = next_seqnum % WINDOWSIZE;
@@ -62,12 +66,13 @@ void A_output(struct msg message) {
             starttimer(A, RTT);
         }
 
+        /* GBN trace: sending packet */
         if (TRACE > 0) printf("Sending packet %d to layer 3\n", sendpkt.seqnum);
         tolayer3(A, sendpkt);
 
         next_seqnum++;
     } else {
-        if (TRACE > 0) printf("A: Window full, message dropped\n");
+        if (TRACE > 0) printf("----A: New message arrives, send window is full\n");
         window_full++;
     }
 }
@@ -75,6 +80,7 @@ void A_output(struct msg message) {
 void A_input(struct pkt packet) {
     if (!IsCorrupted(packet)) {
         int ack_num = packet.acknum;
+        /* GBN trace: uncorrupted ACK received */
         if (TRACE > 0) printf("----A: uncorrupted ACK %d is received\n", ack_num);
         total_ACKs_received++;
 
@@ -82,6 +88,8 @@ void A_input(struct pkt packet) {
             int pos = ack_num % WINDOWSIZE;
             if (!ack_status[pos]) {
                 ack_status[pos] = 1;
+                /* GBN trace: ACK is not a duplicate */
+                if (TRACE > 0) printf("----A: ACK %d is not a duplicate\n", ack_num);
                 new_ACKs++;
 
                 /* Slide window as far as possible */
@@ -103,17 +111,17 @@ void A_input(struct pkt packet) {
 }
 
 void A_timerinterrupt(void) {
-    int i;
+    /* GBN trace: timeout and resend */
     if (TRACE > 0) printf("----A: time out, resending base packet %d\n", send_base);
-    
-    /* Resend only the oldest unacked packet */
+
+    /* Resend only the oldest unACKed packet */
     if (send_base < next_seqnum) {
         int pos = send_base % WINDOWSIZE;
         if (TRACE > 0) printf("Resending packet %d\n", sender_window[pos].seqnum);
         tolayer3(A, sender_window[pos]);
         packets_resent++;
     }
-    
+
     /* Restart timer */
     starttimer(A, RTT);
 }
@@ -122,6 +130,7 @@ void A_init(void) {
     send_base = 0;
     next_seqnum = 0;
     memset(ack_status, 0, sizeof(ack_status));
+    if (TRACE > 0) printf("----A: SR sender initialized\n");
 }
 
 /* ------------------- Receiver (B) Code ------------------- */
@@ -131,6 +140,7 @@ void B_input(struct pkt packet) {
     int seqnum = packet.seqnum;
     int i;
 
+    /* Prepare ACK packet */
     ackpkt.acknum = seqnum;
     ackpkt.seqnum = NOTINUSE;
     for (i = 0; i < 20; i++) {
@@ -159,7 +169,7 @@ void B_input(struct pkt packet) {
             }
         }
 
-        /* Send ACK even for out-of-order but non-corrupted packets */
+        /* Always send ACK */
         tolayer3(B, ackpkt);
     } else if (TRACE > 0) {
         printf("----B: packet corrupted, discarding\n");
@@ -176,6 +186,7 @@ void B_input(struct pkt packet) {
 void B_init(void) {
     rcv_base = 0;
     memset(received, 0, sizeof(received));
+    if (TRACE > 0) printf("----B: SR receiver initialized\n");
 }
 
 /* --------------- Unused Bidirectional Code --------------- */
