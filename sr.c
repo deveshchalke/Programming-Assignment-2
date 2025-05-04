@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include "emulator.h"
-#include "gbn.h"
+#include "sr.h"
 
 #define RTT  16.0
 #define WINDOWSIZE 6
