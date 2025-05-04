@@ -43,53 +43,26 @@ void A_init(void) {
   for (int i = 0; i < WINDOWSIZE; i++) acked[i] = false;
 }
 
-/* A_output unchanged */
+/* A_output same as before */
 
-/* A_input: mark ACK, handle duplicates, slide in‐order */
-void A_input(struct pkt packet) {
-  int i, index;
-  if (IsCorrupted(packet)) {
-    if (TRACE > 0) printf("A: corrupted ACK, ignoring\n");
-    return;
-  }
+/* A_input same as before */
 
-  if (TRACE > 0)
-    printf("----A: uncorrupted ACK %d is received\n", packet.acknum);
-  total_ACKs_received++;
+/* A_timerinterrupt: resend only the first unACKed */
+void A_timerinterrupt(void) {
+  if (TRACE > 0) printf("----A: timeout, resending oldest unACKed\n");
 
-  if (windowcount == 0) return;
-
-  /* Find the buffer slot matching this ACK */
-  index = windowfirst;
-  for (i = 0; i < windowcount; i++) {
-    if (buffer[index].seqnum == packet.acknum) {
-      if (!acked[index]) {
-        if (TRACE > 0) printf("----A: ACK %d is not a duplicate\n", packet.acknum);
-        new_ACKs++;
-        acked[index] = true;
-      } else {
-        if (TRACE > 0) printf("----A: duplicate ACK %d, no action\n", packet.acknum);
-      }
-      break;
-    }
-    index = (index + 1) % WINDOWSIZE;
-  }
-
-  /* Slide window over all in-order ACKed */
-  while (windowcount > 0 && acked[windowfirst]) {
-    acked[windowfirst] = false;
-    windowfirst = (windowfirst + 1) % WINDOWSIZE;
-    windowcount--;
-  }
-
-  /* Restart timer if needed */
-  stoptimer(A);
-  if (windowcount > 0)
+  if (windowcount > 0) {
+    int pos = windowfirst % WINDOWSIZE;
+    if (TRACE > 0)
+      printf("---A: resending packet %d\n", buffer[pos].seqnum);
+    tolayer3(A, buffer[pos]);
+    packets_resent++;
     starttimer(A, RTT);
+  } else {
+    if (TRACE > 0)
+      printf("----A: timeout but no unACKed packets\n");
+  }
 }
-
-/* A_timerinterrupt stub */
-void A_timerinterrupt(void) {}
 
 /* B_init & B_input stubs */
 void B_init(void)                 {}
