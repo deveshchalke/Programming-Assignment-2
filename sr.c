@@ -15,7 +15,7 @@ static int windowfirst, windowlast, windowcount;
 static int A_nextseqnum;
 static bool acked[WINDOWSIZE];
 
-/* Receiver (B) state (stubs) */
+/* Receiver (B) stubs */
 static int expectedseqnum;
 static int B_nextseqnum;
 #define RCV_BUFFER_SIZE SEQSPACE
@@ -36,46 +36,62 @@ bool IsCorrupted(struct pkt packet) {
 
 /* A_init */
 void A_init(void) {
-  windowfirst   = 0;
-  windowlast    = -1;
-  windowcount   = 0;
-  A_nextseqnum  = 0;
+  windowfirst  = 0;
+  windowlast   = -1;
+  windowcount  = 0;
+  A_nextseqnum = 0;
   for (int i = 0; i < WINDOWSIZE; i++) acked[i] = false;
 }
 
-/* A_output: buffer & send if window not full */
-void A_output(struct msg message) {
-  struct pkt sendpkt;
-  int i;
+/* A_output unchanged */
 
-  if (windowcount < WINDOWSIZE) {
-    sendpkt.seqnum = A_nextseqnum;
-    sendpkt.acknum = NOTINUSE;
-    for (i = 0; i < 20; i++) sendpkt.payload[i] = message.data[i];
-    sendpkt.checksum = ComputeChecksum(sendpkt);
-
-    windowlast = (windowfirst + windowcount) % WINDOWSIZE;
-    buffer[windowlast] = sendpkt;
-    acked[windowlast] = false;
-    windowcount++;
-
-    if (TRACE > 0)
-      printf("Sending packet %d to layer 3\n", sendpkt.seqnum);
-    tolayer3(A, sendpkt);
-
-    if (windowcount == 1)
-      starttimer(A, RTT);
-
-    A_nextseqnum = (A_nextseqnum + 1) % SEQSPACE;
-  } else {
-    if (TRACE > 0) printf("A: Window full, dropping message\n");
-    window_full++;
+/* A_input: mark ACK, handle duplicates, slide in‐order */
+void A_input(struct pkt packet) {
+  int i, index;
+  if (IsCorrupted(packet)) {
+    if (TRACE > 0) printf("A: corrupted ACK, ignoring\n");
+    return;
   }
+
+  if (TRACE > 0)
+    printf("----A: uncorrupted ACK %d is received\n", packet.acknum);
+  total_ACKs_received++;
+
+  if (windowcount == 0) return;
+
+  /* Find the buffer slot matching this ACK */
+  index = windowfirst;
+  for (i = 0; i < windowcount; i++) {
+    if (buffer[index].seqnum == packet.acknum) {
+      if (!acked[index]) {
+        if (TRACE > 0) printf("----A: ACK %d is not a duplicate\n", packet.acknum);
+        new_ACKs++;
+        acked[index] = true;
+      } else {
+        if (TRACE > 0) printf("----A: duplicate ACK %d, no action\n", packet.acknum);
+      }
+      break;
+    }
+    index = (index + 1) % WINDOWSIZE;
+  }
+
+  /* Slide window over all in-order ACKed */
+  while (windowcount > 0 && acked[windowfirst]) {
+    acked[windowfirst] = false;
+    windowfirst = (windowfirst + 1) % WINDOWSIZE;
+    windowcount--;
+  }
+
+  /* Restart timer if needed */
+  stoptimer(A);
+  if (windowcount > 0)
+    starttimer(A, RTT);
 }
 
-/* Stubs for rest */
-void A_input(struct pkt packet)   {}
-void A_timerinterrupt(void)       {}
+/* A_timerinterrupt stub */
+void A_timerinterrupt(void) {}
+
+/* B_init & B_input stubs */
 void B_init(void)                 {}
 void B_input(struct pkt packet)   {}
 void B_output(struct msg message) {}
